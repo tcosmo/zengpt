@@ -1,0 +1,45 @@
+.zengpt-relative {
+    position: relative !important;
+}
+
+.zengpt-overlay {
+    position: absolute !important;
+    inset: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: rgba(0, 0, 0, 0.55) !important;
+    backdrop-filter: blur(4px) !important;
+    color: #ffffff !important;
+    z-index: 2147483646 !important;
+    text-align: center !important;
+    padding: 24px !important;
+    border-radius: inherit !important;
+    pointer-events: all !important;
+}
+
+.zengpt-overlay .zengpt-overlay-message {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
+    max-width: 72ch !important;
+}
+
+.zengpt-debug-badge {
+    position: fixed !important;
+    right: 10px !important;
+    bottom: 10px !important;
+    z-index: 2147483647 !important;
+    background: rgba(0, 120, 255, 0.9) !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    padding: 6px 8px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+    user-select: none !important;
+    pointer-events: none !important;
+}
+
+/* Hide streaming tokens only while generating; class is removed at completion */
+.zengpt-generating [data-start] {
+    display: none !important;
+}
