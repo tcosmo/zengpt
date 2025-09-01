@@ -1699,3 +1699,112 @@ Try again and share the latest “[ZenGPT]” logs if the line 176 issue persist
 
 ---
 
+_**User**_
+
+In the popup, can you add:
+
+1. Version number
+2. Created by Tristan Stérin, with my name linking to my website https://tristan.st
+3. Link to the extension github: @https://github.com/tcosmo/zengpt 
+
+---
+
+_**Assistant**_
+
+<think><details><summary>Thought Process</summary>**Modifying popup HTML**
+
+I need to adjust the popup.html to include a version number and some links. I can automatically pull the version from manifest.json using chrome.runtime.getManifest().version and then display that in the popup. I also need to add a footer with links to the website and the GitHub repository. I'll check the current content of popup.html and update the styles accordingly for the footer. There's a lot of little details to manage here!</details></think>
+
+---
+
+Read file: undefined
+
+---
+
+
+
+---
+
+Read file: undefined
+
+---
+
+
+
+---
+
+Read file: undefined
+
+---
+
+
+
+---
+
+
+
+---
+
+- Added footer info to the popup:
+  - Version (auto-filled from manifest)
+  - “Created by Tristan Stérin” linking to `https://tristan.st`
+  - “View on GitHub” linking to `https://github.com/tcosmo/zengpt`
+- Kept styles compact; popup has a wider min-width for readable text.
+
+Reload the extension and reopen the popup to see the version and links.
+
+---
+
+_**User**_
+
+Great, can you also add a sponsor link to @https://github.com/sponsors/tcosmo ?
+
+---
+
+_**Assistant**_
+
+<think><details><summary>Thought Process</summary>**Updating the popup**
+
+I need to modify popup.html to add a sponsor link, but there's no change needed for popup.js, just a link anchor. The user specifically asked for this in the popup, so I should keep the existing links like GitHub and the creator.
+
+I’ll add a "Sponsor on GitHub" link beneath the meta section in the markup, maintaining consistent CSS style. It could be nice to add a small heart icon, but it’s not essential. Finally, I should ensure to cite any relevant links provided by the user.
+**Citing links in updates**
+
+I see that the environment's spec requires citing links in markdown format, so I'll be including references like the GitHub repo and the sponsor link in my response message. However, I shouldn't output any code since I’ll use the apply_patch tool for that.
+
+Also, there are developer instructions for status updates and todo tracking during multi-step tasks, but I can skip todos for this simple task. I’ll make sure to provide a brief status update before any tool calls. It's essential to communicate clearly what I plan to do!
+**Incorporating status updates**
+
+It seems the system is indicating non-compliance regarding status updates. I need to include an update in my message. The assistant’s final message should be a minimal summary, but the initial message requires that 1-2 sentence update.
+
+I see I need to add, "I'll add a Sponsor link to the popup footer." Even though the tool was already executed, I'll include the status update now before calling apply_patch. So now, I’ll proceed to call apply_patch to modify popup.html and add the sponsor link!</details></think>
+
+---
+
+I'll add a Sponsor link to the popup footer and keep styles consistent. Then I'll lint quickly.
+
+---
+
+
+
+---
+
+Read file: undefined
+
+---
+
+
+
+---
+
+
+
+---
+
+- Added a Sponsor link to the popup footer pointing to `https://github.com/sponsors/tcosmo`.
+- Popup now shows version, creator link to `https://tristan.st`, GitHub link `https://github.com/tcosmo/zengpt`, and the sponsor link.
+
+References: [GitHub repo](https://github.com/tcosmo/zengpt), [GitHub Sponsors](https://github.com/sponsors/tcosmo).
+
+---
+

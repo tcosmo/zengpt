@@ -2,12 +2,17 @@
     const checkbox = document.getElementById('enabled');
     const dot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
+    const versionEl = document.getElementById('version');
     function load() {
         chrome.storage.local.get({ zengpt_enabled: true }, (data) => {
             checkbox.checked = Boolean(data.zengpt_enabled);
             renderStatus();
             updateActionIcon(checkbox.checked);
         });
+        try {
+            const v = chrome.runtime.getManifest().version;
+            if (versionEl) versionEl.textContent = v;
+        } catch (_) { }
     }
     function save() {
         const enabled = checkbox.checked;
