@@ -2,7 +2,9 @@
 
 Hides ChatGPT responses until they are fully generated.
 
-![Image representing ZenGPT: person in meditative lotus pose.](zen.png)
+<p align="center">
+  <img src="zen.png" alt="Image representing ZenGPT: person in meditative lotus pose." width="50%"/>
+</p>
 
 ## Install (Developer Mode)
 
