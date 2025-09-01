@@ -2,6 +2,8 @@
 
 Hides ChatGPT responses until they are fully generated.
 
+![Image representing ZenGPT: person in meditative lotus pose.](zen.png)
+
 ## Install (Developer Mode)
 
 1. No build needed. This is a plain MV3 extension.

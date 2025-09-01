@@ -1808,3 +1808,62 @@ References: [GitHub repo](https://github.com/tcosmo/zengpt), [GitHub Sponsors](h
 
 ---
 
+_**User**_
+
+Can you give a me a storage justification for chrome store?
+
+---
+
+_**Assistant**_
+
+<think><details><summary>Thought Process</summary>**Providing Storage Justification**
+
+The user needs concise text for the Chrome Web Store to explain the storage permission. I should focus on these points:  
+
+- "storage" permission is for enabling/disabling a toggle preference only.  
+- No user data or content will be stored; everything remains local and is not synced.  
+- Utilizes chrome.storage.local to store one boolean key, 'zengpt_enabled'.  
+- Data persists until the user removes the extension or toggles it off.  
+- Provide a link to the privacy policy.  
+
+I will include a summary for clarity.
+I noticed the mention of a link requirement for citing "websearch results." However, it's clear from the prior message that these links aren't necessary since we didn't reference any in this case. So, I believe we can skip including citations altogether. I’ll just produce the content without worrying about links or citations. Keeping it straightforward should help maintain clarity in the response. Let’s go ahead with that approach!</details></think>
+
+---
+
+Here’s a concise storage permission justification you can use in the Chrome Web Store:
+
+- What we store: a single preference key `zengpt_enabled` (boolean) to remember if ZenGPT is enabled or disabled.
+- Where it’s stored: `chrome.storage.local` only (on-device). No sync, no cloud.
+- Why it’s needed: to persist the user’s on/off choice across tabs and browser sessions without asking every time.
+- What we don’t store: no chat content, no personal data, no URLs, no telemetry.
+- Data sharing: nothing leaves the device; ZenGPT makes no network requests.
+- Retention: the value remains until the user toggles it, disables the extension, or removes it (which clears the data).
+
+---
+
+_**User**_
+
+Great, host permission justification
+
+---
+
+_**Assistant**_
+
+<think><details><summary>Thought Process</summary>**Keeping it concise**
+
+I want to keep my response brief, as that's what was requested. I can provide justification without links, since earlier instructions about web search results don't apply here. I should include bullet points for clarity. Since no tools were executed, I can reply directly without a summary. The instruction suggests a summary at the end, but for this basic query, I think I can skip it entirely. I'll focus on a minimal output.</details></think>
+
+---
+
+Use this in the Chrome Web Store “Host permissions” section:
+
+- Domains requested: https://chat.openai.com/* and https://chatgpt.com/*
+- Purpose: Allow a content script to run only on ChatGPT pages to detect the “Stop generating” state and temporarily hide the in‑progress assistant message, then reveal it when generation completes.
+- Access level: Read/modify page DOM only (e.g., observe elements, add/remove a visual overlay). No access to network requests, cookies, or other sites.
+- Least privilege: Permissions are limited strictly to the two ChatGPT domains; ZenGPT does not run on any other site.
+- Data handling: No chat content or personal data is collected, stored, or transmitted. The extension performs no external requests.
+- User control: A popup toggle lets users enable/disable the behavior; when disabled, the script stops and removes any overlays.
+
+---
+
