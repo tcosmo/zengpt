@@ -14,7 +14,7 @@ The latest assistant message will be covered by an overlay while generation is i
 
 ## How it works
 
-- A content script observes the page for ChatGPT generation signals (e.g., the presence of a "Stop generating" button or streaming indicators).
+- A content script observes the page for ChatGPT generation signals (e.g., the presence of a "Stop generating" button).
 - While generating, ZenGPT adds an overlay to the latest assistant message container.
 - When generation completes, the overlay is removed.
 
@@ -27,4 +27,3 @@ The latest assistant message will be covered by an overlay while generation is i
 ## Uninstall
 
 - Remove it from `chrome://extensions` at any time.
-# zengpt
