@@ -1046,3 +1046,96 @@ Please reload the extension, refresh ChatGPT, and try again. If it still fails, 
 
 ---
 
+_**User**_
+
+OK let's use a new strategy:
+
+When the assitant is generating word, the button to the right of the input text switches to the attached screenshot aria-label="stop streaming", we can just watch for this toggle
+
+---
+
+_**Assistant**_
+
+<think><details><summary>Thought Process</summary>**Implementing detection logic**
+
+Alright, I need to implement detection for the button with aria-label "Stop streaming." I'll update the content.js to check for button[data-testid="stop-button"] and make sure the overlay shows or hides accordingly. I want to minimize false positives by avoiding overly complex heuristics, only relying on the stop button's visibility. Also, I’ll keep the older label "Stop generating." Debug logs will be added for clarity, and overall, I’m aiming for a more resilient query.
+**Updating observer and status logic**
+
+I'm planning to add a mutation observer to track changes in the compose area, but the current observer on the whole document seems fine for performance. I might adjust the isGenerating check to ignore situations where there’s no assistant container yet, ensuring the overlay doesn’t activate if it’s null. I’ll prioritize checking for the stop button primarily and keep fallback streaming selectors optional. Also, I need to provide a status update before any tool calls, following the expected cadence.
+**Implementing stop-button detection**
+
+The developer has given instructions about using status updates and todo writes before making edits. Since we have a todo list already, I think adding "Switch to stop-button detector" makes sense. I’ll set this up with a status of in progress before we edit files and mark it complete afterward. Also, I'll modify the isGenerating function to check for the stop button using a robust query that includes both "Stop streaming" and "Stop generating." So, I’ll primarily focus on using the stopBtn for clarity, with less emphasis on the fallback options.
+**Implementing stop button detection**
+
+I've noticed the stop button is visible near the composer only during generation, so it’s clear we need to implement this. I should consider edge cases where the aria-label may occasionally be "Stop generating" instead, so I'll include that in the checks. Additionally, I want to add a log statement like, "Detected generating via stop-button near composer." I'll make sure to adapt the detection method to reduce false positives. Alright, let's proceed with these changes!</details></think>
+
+---
+
+I'll switch detection to rely on the composer stop button (`[data-testid="stop-button"]` or `button[aria-label*="Stop streaming" i]` / `button[aria-label*="Stop generating" i]`). Then I'll update the code and run a quick lint check.
+
+---
+
+## Todo List
+
+- [x] Create Chrome extension scaffold (manifest, content script, CSS)
+- [x] Implement detection of ChatGPT generation state and hide/reveal logic
+- [x] Add overlay styles for hidden responses and dark/light mode support
+- [x] Write README with installation and usage instructions
+- [x] Add debug mode (logs, badge, Alt+D) to content script
+- [x] Fix debug toggle shortcut and make badge clickable
+- [x] Re-enable overlay and prefer it over token hiding
+- [-] Detect generation via composer stop button aria-label
+
+---
+
+Read file: undefined
+
+---
+
+<think><details><summary>Thought Process</summary>**Refining detection for composer**
+
+I need to modify the detection to depend on the composer stop button. I’ll update the isGenerating function to look for a button using the data-testid of "stop-button" or an aria-label that contains "Stop streaming" or "Stop generating" in a case-insensitive manner. The existing loop checks all buttons for "stop generating" or "stop," but now I’ll focus on more precise identifiers. If the button is found and not disabled, I’ll indicate it’s visible while generating. I'll also maintain the overlay update.
+**Enhancing message detection**
+
+I need to make sure the detection doesn’t overlay before any messages are displayed. Earlier, we adjusted the getLastAssistantMessageContainer function to return null if there are no messages, which is great. Now, I’ll add console logs for better tracking and run lints. The user suggests relying solely on the stop button and aria-busy/streaming indicators to avoid false positives. So, I'll modify the isGenerating function to find the stop button using specific selectors, including an isVisible check to confirm visibility.
+**Implementing a new strategy**
+
+The user wants a new minimal approach. Currently, the overlay remains active even after generation, so I'll ensure it clears when the stop button disappears. I’ll implement these changes and also adjust the manifest to world MAIN. The overlay should only appear when the container exists, which we’ve already covered. Then, I’ll provide instructions to reload the extension and test it. If there are issues, I'll suggest checking the stop button's visibility through specific queries and providing their DOM structure. Lastly, I need to include a brief status update before using the apply_patch function.
+**Implementing the patch**
+
+I need to prepare the apply_patch tool call for a micro-update. It’s important to implement this patch to ensure everything functions smoothly. I’ll carefully make the necessary updates to the code before proceeding with the tool call. This step is crucial for maintaining performance and addressing any issues that might have arisen. Overall, I’m focused on getting this done efficiently and effectively for the user! Let's move forward with the implementation.</details></think>
+
+---
+
+I’ll update generation detection to rely on the composer “Stop streaming” button (`button[data-testid="stop-button"]` or `#composer-submit-button[aria-label*="stop" i]`) and remove the text-length heuristic, so the overlay only shows while that button exists. Then I’ll lint.
+
+---
+
+
+
+---
+
+
+
+---
+
+## Todo List
+
+- [x] Create Chrome extension scaffold (manifest, content script, CSS)
+- [x] Implement detection of ChatGPT generation state and hide/reveal logic
+- [x] Add overlay styles for hidden responses and dark/light mode support
+- [x] Write README with installation and usage instructions
+- [x] Add debug mode (logs, badge, Alt+D) to content script
+- [x] Fix debug toggle shortcut and make badge clickable
+- [x] Re-enable overlay and prefer it over token hiding
+- [x] Detect generation via composer stop button aria-label
+
+---
+
+- Detection now keys off the composer stop button: `[data-testid="stop-button"]`, `#composer-submit-button[aria-label*="stop"]`, and common aria-label variants.
+- Overlay should display only while that stop button exists, and clear as soon as it disappears.
+
+Please reload the extension and refresh ChatGPT. If the button uses a different aria-label on your build, paste its exact `aria-label` or `data-testid` and I’ll include it.
+
+---
+

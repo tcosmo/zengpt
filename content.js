@@ -1,312 +1,293 @@
-(() => {
-    'use strict';
-
-    const OVERLAY_CLASS_NAME = 'zengpt-overlay';
-    const PARENT_RELATIVE_CLASS_NAME = 'zengpt-relative';
-    const DEBUG_BADGE_CLASS_NAME = 'zengpt-debug-badge';
-    const STORAGE_KEY_DEBUG = 'zengpt:debugEnabled';
+(function () {
     const SCRIPT_VERSION = '0.1.0';
-    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
-    const GENERATING_CLASS_NAME = 'zengpt-generating';
-    const USE_OVERLAY = true; // prefer overlay strategy
+    const STOP_BUTTON_SELECTOR = '#composer-submit-button[data-testid="stop-button"], button[data-testid="stop-button"][aria-label="Stop streaming"]';
+    const ASSISTANT_MESSAGE_SELECTORS = [
+        'article[data-turn="assistant"]',
+        'article[data-message-author-role="assistant"]',
+        'article[data-role="assistant"]',
+        '[data-message-author-role="assistant"]'
+    ].join(', ');
 
-    let lastAssistantMutationAt = 0; // reserved
-    let lastAssistantTextLen = 0;
-    let lastAssistantTextLenAt = 0;
+    let currentlyHiddenElement = null;
+    let scheduled = false;
+    let wasStopPresent = false;
+    let scrollLockActive = false;
+    let scrollLockUntil = 0;
+    let savedScrollY = 0;
+    let lockRafId = 0;
+    let scrollLockContainer = null;
+    let savedScrollTop = 0;
+    let scrollLockOnScroll = null;
 
-    function getDebugEnabled() {
-        try {
-            return localStorage.getItem(STORAGE_KEY_DEBUG) === '1';
-        } catch (_) {
-            return false;
-        }
-    }
-
-    function setDebugEnabled(enabled) {
-        try {
-            localStorage.setItem(STORAGE_KEY_DEBUG, enabled ? '1' : '0');
-        } catch (_) { }
-    }
-
-    function log(...args) {
-        if (getDebugEnabled()) {
-            // Use a consistent prefix for easy filtering
-            console.log('[ZenGPT]', ...args);
-        }
-    }
-
-    // Always show a startup log so we know the script is active
     try {
         console.log('[ZenGPT] Content script loaded v' + SCRIPT_VERSION);
-        console.log('[ZenGPT] Toggle debug with ' + (isMac ? 'Cmd+Shift+Z' : 'Ctrl+Shift+Z') + ' (Alt+Shift+Z fallback).');
     } catch (_) { }
 
-    function debounce(fn, wait) {
-        let timeoutId = null;
-        return function debounced(...args) {
-            if (timeoutId) window.clearTimeout(timeoutId);
-            timeoutId = window.setTimeout(() => fn.apply(this, args), wait);
-        };
-    }
+    function getAssistantArticle() {
+        // 1) Prefer explicit assistant articles by data-turn
+        const byTurn = document.querySelectorAll('article[data-turn="assistant"]');
+        if (byTurn && byTurn.length > 0) return byTurn[byTurn.length - 1];
 
-    function isGenerating() {
-        try {
-            const buttons = document.querySelectorAll('button');
-            for (const button of buttons) {
-                const text = (button.textContent || '').trim().toLowerCase();
-                const aria = (button.getAttribute('aria-label') || '').trim().toLowerCase();
-                if (text.includes('stop generating') || text === 'stop' || aria.includes('stop generating') || aria === 'stop') {
-                    log('Detected generating via Stop button');
-                    return true;
-                }
+        // 2) Any assistant-marked article
+        const articleAssistant = document.querySelectorAll('article[data-message-author-role="assistant"], article[data-role="assistant"]');
+        if (articleAssistant && articleAssistant.length > 0) return articleAssistant[articleAssistant.length - 1];
+
+        // 3) Find an inner assistant node and bubble to its containing article
+        const inner = document.querySelectorAll('[data-message-author-role="assistant"]');
+        if (inner && inner.length > 0) {
+            for (let i = inner.length - 1; i >= 0; i--) {
+                const art = inner[i].closest('article');
+                if (art) return art;
             }
-            if (document.querySelector('[data-testid="gizmo-result-streaming"], .result-streaming')) {
-                log('Detected generating via streaming testid/class');
-                return true;
-            }
-
-            const container = getLastAssistantMessageContainer();
-            if (container) {
-                if (container.getAttribute('aria-busy') === 'true') {
-                    log('Detected generating via aria-busy=true');
-                    return true;
-                }
-
-                // Heuristic: infer streaming if assistant text is actively growing
-                const messageEl = container.querySelector('.text-message, .markdown, [data-message-author-role="assistant"]') || container;
-                const now = Date.now();
-                let len = 0;
-                try { len = (messageEl.textContent || '').length; } catch (_) { len = 0; }
-                if (len !== lastAssistantTextLen) {
-                    lastAssistantTextLen = len;
-                    lastAssistantTextLenAt = now;
-                }
-                // If text changed within the last 700ms and is non-trivial, assume streaming
-                if (len > 5 && (now - lastAssistantTextLenAt) < 700) {
-                    log('Detected generating via growing text len');
-                    return true;
-                }
-            }
-        } catch (_) { }
-        return false;
-    }
-
-    function getLastAssistantMessageContainer() {
-        // Prefer the message content container inside the assistant turn
-        const assistantTurns = document.querySelectorAll('[data-message-author-role="assistant"]');
-        if (assistantTurns && assistantTurns.length > 0) {
-            const lastTurn = assistantTurns[assistantTurns.length - 1];
-            const textMessage = lastTurn.querySelector('.text-message') || lastTurn;
-            return textMessage;
-        }
-
-        // Fallback: target container following the screen-reader header "ChatGPT said:"
-        const headers = Array.from(document.querySelectorAll('h6.sr-only'));
-        for (let i = headers.length - 1; i >= 0; i--) {
-            const h = headers[i];
-            const label = (h.textContent || '').trim().toLowerCase();
-            if (label.includes('chatgpt said')) {
-                // The assistant content is typically within the next sibling turn container
-                let sibling = h.nextElementSibling;
-                while (sibling && sibling.tagName === 'H6') sibling = sibling.nextElementSibling;
-                if (sibling) return sibling;
-            }
-        }
-
-        // Broader fallbacks
-        const conversationTurns = document.querySelectorAll('[data-testid^="conversation-turn-"]');
-        for (let i = conversationTurns.length - 1; i >= 0; i--) {
-            const turn = conversationTurns[i];
-            const hasAssistantIcon = !!turn.querySelector('svg[aria-label*="Assistant" i], svg[aria-label*="ChatGPT" i]');
-            if (hasAssistantIcon) return turn;
         }
         return null;
     }
 
-    function ensureOverlay(container) {
-        if (!container) return;
-        if (!USE_OVERLAY) return;
-        if (container.querySelector(`.${OVERLAY_CLASS_NAME}`)) return;
-
-        container.classList.add(PARENT_RELATIVE_CLASS_NAME);
-
-        const overlay = document.createElement('div');
-        overlay.className = OVERLAY_CLASS_NAME;
-        overlay.setAttribute('role', 'note');
-        overlay.setAttribute('aria-live', 'polite');
-        overlay.setAttribute('aria-label', 'ZenGPT is hiding the response until generation completes');
-
-        const message = document.createElement('div');
-        message.className = 'zengpt-overlay-message';
-        message.textContent = 'ZenGPT: Response hidden until generation completes.';
-
-        overlay.appendChild(message);
-        container.appendChild(overlay);
-
-        log('Overlay added to container', container);
+    function isStopStreamingPresent() {
+        return Boolean(document.querySelector(STOP_BUTTON_SELECTOR));
     }
 
-    function removeAllOverlays() {
-        const overlays = document.querySelectorAll(`.${OVERLAY_CLASS_NAME}`);
-        overlays.forEach(node => {
-            const parent = node.parentElement;
-            node.remove();
-            if (parent) parent.classList.remove(PARENT_RELATIVE_CLASS_NAME);
-        });
-
-        if (overlays.length > 0) log('Removed overlays:', overlays.length);
-    }
-
-    function clearGeneratingClasses() {
-        const nodes = document.querySelectorAll(`.${GENERATING_CLASS_NAME}`);
-        nodes.forEach(n => n.classList.remove(GENERATING_CLASS_NAME));
-    }
-
-    function updateOverlayState() {
-        try {
-            const generating = isGenerating();
-            if (getDebugEnabled()) log('updateOverlayState: generating =', generating);
-            if (generating) {
-                const container = getLastAssistantMessageContainer();
-                if (container) {
-                    container.classList.add(GENERATING_CLASS_NAME);
-                    ensureOverlay(container);
+    function getScrollableContainer(start) {
+        let node = start;
+        while (node && node !== document.documentElement) {
+            try {
+                const style = node instanceof Element ? getComputedStyle(node) : null;
+                const overflowY = style ? style.overflowY : '';
+                const canScroll = node.scrollHeight > node.clientHeight + 1;
+                if (canScroll && (overflowY === 'auto' || overflowY === 'scroll')) {
+                    return node;
                 }
-            } else {
-                clearGeneratingClasses();
-                removeAllOverlays();
+                node = node.parentElement;
+            } catch (_) {
+                break;
             }
+        }
+        return document.scrollingElement || document.documentElement;
+    }
+
+    function createOverlay() {
+        const overlay = document.createElement('div');
+        overlay.className = 'zen-gpt-overlay';
+        const text = document.createElement('div');
+        text.className = 'zen-gpt-overlay-text';
+        text.textContent = 'ZenGPT: The answer will appear once fully generated.';
+        const illo = document.createElement('div');
+        illo.className = 'zen-gpt-overlay-illustration';
+        const img = document.createElement('img');
+        try {
+            img.src = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) ? chrome.runtime.getURL('zen.png') : 'zen.png';
         } catch (_) {
-            // no-op
+            img.src = 'zen.png';
+        }
+        img.alt = 'ZenGPT illustration';
+        img.decoding = 'async';
+        img.loading = 'lazy';
+        illo.appendChild(img);
+        overlay.appendChild(text);
+        overlay.appendChild(illo);
+        return overlay;
+    }
+
+    function ensureOverlayBefore(target) {
+        if (!target || !target.parentElement) return;
+        const prev = target.previousElementSibling;
+        if (prev && prev.classList && prev.classList.contains('zen-gpt-overlay')) return;
+        const overlay = createOverlay();
+        try { target.parentElement.insertBefore(overlay, target); } catch (_) { }
+    }
+
+    function removeOverlayBefore(target) {
+        if (!target || !target.parentElement) return;
+        const prev = target.previousElementSibling;
+        if (prev && prev.classList && prev.classList.contains('zen-gpt-overlay')) {
+            try { prev.remove(); } catch (_) { }
         }
     }
 
-    const debouncedUpdate = debounce(updateOverlayState, 100);
-
-    updateOverlayState();
-
-    const observer = new MutationObserver(() => { debouncedUpdate(); });
-    observer.observe(document.documentElement || document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['data-message-author-role', 'aria-busy', 'class']
-    });
-
-    const intervalId = window.setInterval(updateOverlayState, 500);
-
-    let lastUrl = location.href;
-    const urlCheckId = window.setInterval(() => {
-        if (location.href !== lastUrl) {
-            lastUrl = location.href;
-            updateOverlayState();
-        }
-    }, 1000);
-
-    window.addEventListener('beforeunload', () => {
-        window.clearInterval(intervalId);
-        window.clearInterval(urlCheckId);
-        observer.disconnect();
-    });
-
-    // Debug badge
-    function renderDebugBadge() {
-        let badge = document.querySelector(`.${DEBUG_BADGE_CLASS_NAME}`);
-        const enabled = getDebugEnabled();
-        if (!enabled) {
-            if (badge) badge.remove();
-            return;
-        }
-        if (!badge) {
-            badge = document.createElement('div');
-            badge.className = DEBUG_BADGE_CLASS_NAME;
-            badge.textContent = 'ZenGPT Debug ON (' + (isMac ? 'Cmd+Shift+Z' : 'Ctrl+Shift+Z') + ' to toggle)';
-            badge.addEventListener('click', () => {
-                try { toggleDebug(); } catch (_) { }
-            });
-            document.documentElement.appendChild(badge);
-        }
-    }
-
-    function toggleDebug() {
-        const next = !getDebugEnabled();
-        setDebugEnabled(next);
-        log('Toggled debug to', next);
-        renderDebugBadge();
-        updateOverlayState();
-    }
-
-    // Keyboard toggle: Cmd+Shift+Z (mac) / Ctrl+Shift+Z (others). Fallback Alt+Shift+Z.
-    window.addEventListener('keydown', (e) => {
+    function ensureOverlayVisibleFor(target) {
         try {
-            const key = (e.key || '').toLowerCase();
-            const primaryCombo = (isMac ? (e.metaKey && e.shiftKey && !e.altKey && !e.ctrlKey) : (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey));
-            const fallbackCombo = (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey);
-            if ((primaryCombo && key === 'z') || (fallbackCombo && key === 'z')) {
-                toggleDebug();
-                e.preventDefault();
+            if (!target) return;
+            const overlay = target.previousElementSibling;
+            if (!overlay || !overlay.classList || !overlay.classList.contains('zen-gpt-overlay')) return;
+            const container = scrollLockContainer || getScrollableContainer(target);
+            if (!container) return;
+
+            // Compute overlay position relative to the container's viewport
+            const overlayRect = overlay.getBoundingClientRect();
+            const containerRect = (container === document.scrollingElement || container === document.documentElement || container === document.body)
+                ? { top: 0, height: window.innerHeight }
+                : container.getBoundingClientRect();
+
+            const relativeTop = overlayRect.top - containerRect.top;
+            const relativeBottom = relativeTop + overlayRect.height;
+            let delta = 0;
+            const margin = 12;
+            const viewportHeight = (containerRect.height !== undefined ? containerRect.height : window.innerHeight);
+
+            if (relativeTop < margin) {
+                delta = relativeTop - margin;
+            } else if (relativeBottom > viewportHeight - margin) {
+                delta = relativeBottom - (viewportHeight - margin);
+            }
+
+            if (delta !== 0) {
+                if (container === document.scrollingElement || container === document.documentElement || container === document.body) {
+                    const newY = Math.max(0, (window.scrollY || 0) + delta);
+                    try { window.scrollTo(0, newY); } catch (_) { }
+                    savedScrollY = newY;
+                } else {
+                    try { container.scrollTop = Math.max(0, container.scrollTop + delta); } catch (_) { }
+                    savedScrollTop = container.scrollTop;
+                }
             }
         } catch (_) { }
-    }, true);
+    }
 
-    renderDebugBadge();
+    function hideElement(target) {
+        if (!target) return;
+        target.classList.add('zen-gpt-hidden');
+        ensureOverlayBefore(target);
+        currentlyHiddenElement = target;
+    }
 
-    // Listen for page->content messages to control debug from page context
-    window.addEventListener('message', (event) => {
-        try {
-            if (event.source !== window) return;
-            const data = event.data || {};
-            if (!data || typeof data !== 'object' || !data.__zengpt) return;
-            if (data.action === 'enable') {
-                setDebugEnabled(true); renderDebugBadge(); updateOverlayState();
-            } else if (data.action === 'disable') {
-                setDebugEnabled(false); renderDebugBadge(); updateOverlayState();
-            } else if (data.action === 'toggle') {
-                toggleDebug();
-            } else if (data.action === 'ping') {
-                // no-op; just used to verify listener is attached
-                if (getDebugEnabled()) log('Received ping from page');
-            }
-        } catch (_) { }
-    });
-
-    // Define page-visible API directly (works when running in MAIN world). Fallback: attempt injection if not set.
-    try {
-        if (!window.__zengpt) {
-            Object.defineProperty(window, '__zengpt', {
-                value: {
-                    enableDebug: () => window.postMessage({ __zengpt: true, action: 'enable' }, '*'),
-                    disableDebug: () => window.postMessage({ __zengpt: true, action: 'disable' }, '*'),
-                    toggleDebug: () => window.postMessage({ __zengpt: true, action: 'toggle' }, '*'),
-                    version: SCRIPT_VERSION
-                },
-                writable: false,
-                enumerable: false,
-                configurable: true
-            });
+    function showElement(target) {
+        if (!target) return;
+        target.classList.remove('zen-gpt-hidden');
+        removeOverlayBefore(target);
+        if (currentlyHiddenElement === target) {
+            currentlyHiddenElement = null;
         }
-        console.log('[ZenGPT] API available as window.__zengpt');
-    } catch (_) {
+    }
+
+    function updateHiddenState() {
         try {
-            const script = document.createElement('script');
-            script.textContent = `(() => {
+            const stopPresent = isStopStreamingPresent();
+            // Handle scroll lock on transition into/out of streaming
+            if (stopPresent && !wasStopPresent) {
                 try {
-                    if (!window.__zengpt) {
-                        const api = {
-                            enableDebug: () => window.postMessage({ __zengpt: true, action: 'enable' }, '*'),
-                            disableDebug: () => window.postMessage({ __zengpt: true, action: 'disable' }, '*'),
-                            toggleDebug: () => window.postMessage({ __zengpt: true, action: 'toggle' }, '*'),
-                            version: ${JSON.stringify(SCRIPT_VERSION)}
-                        };
-                        Object.defineProperty(window, '__zengpt', { value: api, writable: false, enumerable: false, configurable: true });
-                    }
-                    window.postMessage({ __zengpt: true, action: 'ping' }, '*');
-                } catch (e) { /* ignore */ }
-            })();`;
-            (document.documentElement || document.head || document.body).appendChild(script);
-            script.remove();
-            console.log('[ZenGPT] API available as window.__zengpt (injected)');
+                    const target = getAssistantArticle();
+                    scrollLockContainer = getScrollableContainer(target || document.body);
+                } catch (_) {
+                    scrollLockContainer = document.scrollingElement || document.documentElement;
+                }
+                startScrollLock(1800);
+            } else if (!stopPresent && wasStopPresent) {
+                stopScrollLock();
+            }
+            if (stopPresent) {
+                const latestAssistantArticle = getAssistantArticle();
+                hideElement(latestAssistantArticle);
+                ensureOverlayVisibleFor(latestAssistantArticle);
+                wasStopPresent = stopPresent;
+                return;
+            }
+
+            // Stop button not present: reveal anything we hid
+            if (currentlyHiddenElement) {
+                showElement(currentlyHiddenElement);
+            }
+            // Remove any stray overlays just in case
+            try {
+                const allOverlays = document.querySelectorAll('.zen-gpt-overlay');
+                for (const ov of allOverlays) { ov.remove(); }
+            } catch (_) { }
+            wasStopPresent = stopPresent;
+        } catch (err) {
+            try { console.debug('[ZenGPT] updateHiddenState error', err); } catch (_) { }
+        }
+    }
+
+    function scheduleUpdate() {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => {
+            scheduled = false;
+            try {
+                updateHiddenState();
+            } catch (err) {
+                try { console.debug('[ZenGPT] scheduleUpdate error', err); } catch (_) { }
+            }
+        });
+    }
+
+    function startObserver() {
+        const observer = new MutationObserver(() => {
+            try {
+                scheduleUpdate();
+            } catch (err) {
+                try { console.debug('[ZenGPT] observer error', err); } catch (_) { }
+            }
+        });
+        observer.observe(document.documentElement || document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['data-testid', 'aria-label', 'id', 'data-message-author-role', 'data-turn']
+        });
+    }
+
+    function startScrollLock(durationMs) {
+        try { document.documentElement.style.scrollBehavior = 'auto'; } catch (_) { }
+        savedScrollY = window.scrollY || 0;
+        if (!scrollLockContainer) scrollLockContainer = document.scrollingElement || document.documentElement;
+        try { savedScrollTop = scrollLockContainer.scrollTop; } catch (_) { savedScrollTop = 0; }
+        scrollLockUntil = Date.now() + (durationMs || 1200);
+        if (scrollLockActive) return;
+        scrollLockActive = true;
+        const cancel = () => stopScrollLock();
+        try {
+            window.addEventListener('wheel', cancel, { passive: true, once: true });
+            window.addEventListener('touchstart', cancel, { passive: true, once: true });
+            window.addEventListener('keydown', cancel, { passive: true, once: true });
         } catch (_) { }
+        // Keep the container's scrollTop locked as well
+        try {
+            scrollLockOnScroll = () => {
+                if (!scrollLockActive) return;
+                try { scrollLockContainer.scrollTop = savedScrollTop; } catch (_) { }
+            };
+            scrollLockContainer.addEventListener('scroll', scrollLockOnScroll, { passive: true });
+        } catch (_) { }
+        const tick = () => {
+            if (!scrollLockActive) return;
+            if (Date.now() > scrollLockUntil) { stopScrollLock(); return; }
+            const y = window.scrollY || 0;
+            if (Math.abs(y - savedScrollY) > 1) {
+                try { window.scrollTo(0, savedScrollY); } catch (_) { }
+            }
+            try {
+                if (Math.abs(scrollLockContainer.scrollTop - savedScrollTop) > 1) {
+                    scrollLockContainer.scrollTop = savedScrollTop;
+                }
+            } catch (_) { }
+            lockRafId = window.requestAnimationFrame(tick);
+        };
+        lockRafId = window.requestAnimationFrame(tick);
+    }
+
+    function stopScrollLock() {
+        if (!scrollLockActive) return;
+        scrollLockActive = false;
+        try { lockRafId && window.cancelAnimationFrame(lockRafId); } catch (_) { }
+        lockRafId = 0;
+        try { scrollLockOnScroll && scrollLockContainer && scrollLockContainer.removeEventListener('scroll', scrollLockOnScroll); } catch (_) { }
+        scrollLockOnScroll = null;
+        scrollLockContainer = null;
+        try { document.documentElement.style.scrollBehavior = ''; } catch (_) { }
+    }
+
+    function init() {
+        try { updateHiddenState(); } catch (_) { }
+        try { startObserver(); } catch (_) { }
+        // Also update on visibility changes just in case
+        try { document.addEventListener('visibilitychange', scheduleUpdate, { passive: true }); } catch (_) { }
+        try { window.addEventListener('focus', scheduleUpdate, { passive: true }); } catch (_) { }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+        init();
     }
 })();
 

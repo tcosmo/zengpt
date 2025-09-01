@@ -16,11 +16,22 @@
                 "styles.css"
             ],
             "run_at": "document_idle",
-            "world": "MAIN"
+            "world": "ISOLATED"
         }
     ],
     "host_permissions": [
         "https://chat.openai.com/*",
         "https://chatgpt.com/*"
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "zen.png"
+            ],
+            "matches": [
+                "https://chat.openai.com/*",
+                "https://chatgpt.com/*"
+            ]
+        }
     ]
 }
