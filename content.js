@@ -20,7 +20,7 @@
     let scrollLockOnScroll = null;
 
     try {
-        console.log('[ZenGPT] Content script loaded v' + SCRIPT_VERSION);
+        console.log('[ZenGPT] Extension loaded (v' + SCRIPT_VERSION + ')');
     } catch (_) { }
 
     function getAssistantArticle() {
@@ -159,7 +159,24 @@
         }
     }
 
+    function dbg() {
+        try { console.debug('[ZenGPT]', ...arguments); } catch (_) { }
+    }
+
     function updateHiddenState() {
+        // If disabled, undo and exit
+        try {
+            // Read enable flag lazily; default to true if unavailable
+            // chrome.storage is async; to keep it responsive we use a cached value updated via messages
+            if (typeof window.__zengpt_enabled === 'boolean' && !window.__zengpt_enabled) {
+                if (currentlyHiddenElement) { showElement(currentlyHiddenElement); }
+                try {
+                    const allOverlays = document.querySelectorAll('.zen-gpt-overlay');
+                    for (const ov of allOverlays) { ov.remove(); }
+                } catch (_) { }
+                return;
+            }
+        } catch (err) { dbg('updateHiddenState:pre-check error', err); }
         try {
             const stopPresent = isStopStreamingPresent();
             // Handle scroll lock on transition into/out of streaming
@@ -192,9 +209,7 @@
                 for (const ov of allOverlays) { ov.remove(); }
             } catch (_) { }
             wasStopPresent = stopPresent;
-        } catch (err) {
-            try { console.debug('[ZenGPT] updateHiddenState error', err); } catch (_) { }
-        }
+        } catch (err) { dbg('updateHiddenState:main error', err); }
     }
 
     function scheduleUpdate() {
@@ -277,6 +292,19 @@
     }
 
     function init() {
+        // Seed enabled flag and setup message listener
+        try {
+            chrome.storage?.local?.get({ zengpt_enabled: true }, (data) => {
+                window.__zengpt_enabled = Boolean(data?.zengpt_enabled);
+                scheduleUpdate();
+            });
+            chrome.runtime?.onMessage?.addListener?.((msg) => {
+                if (msg && msg.type === 'zengpt-toggle') {
+                    window.__zengpt_enabled = Boolean(msg.enabled);
+                    scheduleUpdate();
+                }
+            });
+        } catch (_) { window.__zengpt_enabled = true; }
         try { updateHiddenState(); } catch (_) { }
         try { startObserver(); } catch (_) { }
         // Also update on visibility changes just in case

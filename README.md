@@ -1,6 +1,6 @@
 # ZenGPT (Chrome Extension)
 
-Hides ChatGPT responses until they are fully generated. No more streaming text headaches.
+Hides ChatGPT responses until they are fully generated.
 
 ## Install (Developer Mode)
 

@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ZenGPT</title>
+    <style>
+        body {
+            margin: 12px;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+            color: #e5e5e5;
+            background: #111;
+            min-width: 280px;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        label {
+            font-weight: 600;
+        }
+
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+
+        .hint {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .status {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #cfcfcf;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10B981;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="row">
+        <input id="enabled" type="checkbox" />
+        <label for="enabled">Enable ZenGPT</label>
+    </div>
+    <div class="hint">Applies on chat.openai.com and chatgpt.com</div>
+    <div class="status"><span id="status-dot" class="dot"></span><span id="status-text">Active</span></div>
+    <script src="popup.js"></script>
+</body>
+
+</html>
