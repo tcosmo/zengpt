@@ -6,6 +6,12 @@ Hides ChatGPT responses until they are fully generated.
   <img src="zen.png" alt="Image representing ZenGPT: person in meditative lotus pose." width="50%"/>
 </p>
 
+## Install
+
+You can install ZenGPT from Chrome Web Store:
+
+https://chromewebstore.google.com/detail/zengpt/jcmppahlhehiaoknhgjoojncbgagggik
+
 ## Install (Developer Mode)
 
 1. No build needed. This is a plain MV3 extension.
