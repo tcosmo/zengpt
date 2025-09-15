@@ -23,7 +23,8 @@
         {
             "matches": [
                 "https://chat.openai.com/*",
-                "https://chatgpt.com/*"
+                "https://chatgpt.com/*",
+                "https://chat.mistral.ai/*"
             ],
             "js": [
                 "content.js"
@@ -40,7 +41,8 @@
     ],
     "host_permissions": [
         "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
+        "https://chatgpt.com/*",
+        "https://chat.mistral.ai/*"
     ],
     "web_accessible_resources": [
         {
@@ -49,7 +51,8 @@
             ],
             "matches": [
                 "https://chat.openai.com/*",
-                "https://chatgpt.com/*"
+                "https://chatgpt.com/*",
+                "https://chat.mistral.ai/*"
             ]
         }
     ]
