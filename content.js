@@ -1,6 +1,13 @@
 (function () {
     const SCRIPT_VERSION = '0.1.0';
-    const STOP_BUTTON_SELECTOR = '#composer-submit-button[data-testid="stop-button"], button[data-testid="stop-button"][aria-label="Stop streaming"]';
+    const STOP_BUTTON_SELECTOR = [
+        '#composer-submit-button[data-testid="stop-button"]',
+        'button[data-testid="stop-button"][aria-label="Stop streaming"]',
+        'button[aria-label*="stop streaming" i]',
+        'button[aria-label*="stop generating" i]',
+        'button:has(svg.lucide-square)',
+        'button:has(svg[aria-hidden="true"].lucide-square)'
+    ].join(', ');
     const ASSISTANT_MESSAGE_SELECTORS = [
         'article[data-turn="assistant"]',
         'article[data-message-author-role="assistant"]',
@@ -26,25 +33,92 @@
     function getAssistantArticle() {
         // 1) Prefer explicit assistant articles by data-turn
         const byTurn = document.querySelectorAll('article[data-turn="assistant"]');
-        if (byTurn && byTurn.length > 0) return byTurn[byTurn.length - 1];
+        if (byTurn && byTurn.length > 0) {
+            const found = byTurn[byTurn.length - 1];
+            try { console.debug('[ZenGPT] assistant via data-turn:', found); } catch (_) { }
+            return found;
+        }
 
         // 2) Any assistant-marked article
         const articleAssistant = document.querySelectorAll('article[data-message-author-role="assistant"], article[data-role="assistant"]');
-        if (articleAssistant && articleAssistant.length > 0) return articleAssistant[articleAssistant.length - 1];
+        if (articleAssistant && articleAssistant.length > 0) {
+            const found = articleAssistant[articleAssistant.length - 1];
+            try { console.debug('[ZenGPT] assistant via role/author:', found); } catch (_) { }
+            return found;
+        }
 
         // 3) Find an inner assistant node and bubble to its containing article
         const inner = document.querySelectorAll('[data-message-author-role="assistant"]');
         if (inner && inner.length > 0) {
             for (let i = inner.length - 1; i >= 0; i--) {
                 const art = inner[i].closest('article');
-                if (art) return art;
+                if (art) {
+                    try { console.debug('[ZenGPT] assistant via inner node:', art); } catch (_) { }
+                    return art;
+                }
+                // Mistral path: no <article>; use the assistant block itself (or its answer part)
+                const answer = inner[i].querySelector('[data-message-part-type="answer"]') || inner[i];
+                try { console.debug('[ZenGPT] assistant via direct assistant node:', answer); } catch (_) { }
+                return answer;
             }
+        }
+        try { console.debug('[ZenGPT] assistant article not found'); } catch (_) { }
+        return null;
+    }
+
+    function getComposerElement() {
+        const selectors = [
+            'form textarea',
+            'form [contenteditable="true"]',
+            'footer textarea',
+            '[data-testid="composer"] textarea',
+            '[role="textbox"][contenteditable="true"]'
+        ];
+        for (const s of selectors) {
+            const el = document.querySelector(s);
+            if (el) return el;
+        }
+        return null;
+    }
+
+    function getElementAboveComposer() {
+        const composer = getComposerElement();
+        if (!composer) return null;
+        let node = composer.closest('form') || composer.parentElement;
+        if (!node) return null;
+        let sibling = node.previousElementSibling;
+        while (sibling) {
+            try {
+                const style = getComputedStyle(sibling);
+                if (sibling.offsetHeight > 10 && style.display !== 'none' && style.visibility !== 'hidden') return sibling;
+            } catch (_) { }
+            sibling = sibling.previousElementSibling;
         }
         return null;
     }
 
     function isStopStreamingPresent() {
-        return Boolean(document.querySelector(STOP_BUTTON_SELECTOR));
+        try {
+            const direct = document.querySelector(STOP_BUTTON_SELECTOR);
+            if (direct) { try { console.debug('[ZenGPT] stop via selector:', direct); } catch (_) { } return true; }
+            const candidates = document.querySelectorAll('button, [role="button"]');
+            for (const el of candidates) {
+                try {
+                    const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+                    if (aria.includes('stop')) { try { console.debug('[ZenGPT] stop via aria-label on', el); } catch (_) { } return true; }
+                    const text = (el.textContent || '').toLowerCase();
+                    if (text.includes('stop')) { try { console.debug('[ZenGPT] stop via text on', el); } catch (_) { } return true; }
+                    const svgs = el.querySelectorAll('svg');
+                    for (const svg of svgs) {
+                        if (svg.classList && svg.classList.contains('lucide-square')) { try { console.debug('[ZenGPT] stop via lucide-square on', el); } catch (_) { } return true; }
+                    }
+                } catch (_) { }
+            }
+            try { console.debug('[ZenGPT] stop not detected'); } catch (_) { }
+        } catch (err) {
+            try { console.debug('[ZenGPT] isStopStreamingPresent error', err); } catch (_) { }
+        }
+        return false;
     }
 
     function getScrollableContainer(start) {
@@ -94,6 +168,7 @@
         if (prev && prev.classList && prev.classList.contains('zen-gpt-overlay')) return;
         const overlay = createOverlay();
         try { target.parentElement.insertBefore(overlay, target); } catch (_) { }
+        try { console.debug('[ZenGPT] overlay inserted before', target); } catch (_) { }
     }
 
     function removeOverlayBefore(target) {
@@ -101,46 +176,13 @@
         const prev = target.previousElementSibling;
         if (prev && prev.classList && prev.classList.contains('zen-gpt-overlay')) {
             try { prev.remove(); } catch (_) { }
+            try { console.debug('[ZenGPT] overlay removed before', target); } catch (_) { }
         }
     }
 
     function ensureOverlayVisibleFor(target) {
-        try {
-            if (!target) return;
-            const overlay = target.previousElementSibling;
-            if (!overlay || !overlay.classList || !overlay.classList.contains('zen-gpt-overlay')) return;
-            const container = scrollLockContainer || getScrollableContainer(target);
-            if (!container) return;
-
-            // Compute overlay position relative to the container's viewport
-            const overlayRect = overlay.getBoundingClientRect();
-            const containerRect = (container === document.scrollingElement || container === document.documentElement || container === document.body)
-                ? { top: 0, height: window.innerHeight }
-                : container.getBoundingClientRect();
-
-            const relativeTop = overlayRect.top - containerRect.top;
-            const relativeBottom = relativeTop + overlayRect.height;
-            let delta = 0;
-            const margin = 12;
-            const viewportHeight = (containerRect.height !== undefined ? containerRect.height : window.innerHeight);
-
-            if (relativeTop < margin) {
-                delta = relativeTop - margin;
-            } else if (relativeBottom > viewportHeight - margin) {
-                delta = relativeBottom - (viewportHeight - margin);
-            }
-
-            if (delta !== 0) {
-                if (container === document.scrollingElement || container === document.documentElement || container === document.body) {
-                    const newY = Math.max(0, (window.scrollY || 0) + delta);
-                    try { window.scrollTo(0, newY); } catch (_) { }
-                    savedScrollY = newY;
-                } else {
-                    try { container.scrollTop = Math.max(0, container.scrollTop + delta); } catch (_) { }
-                    savedScrollTop = container.scrollTop;
-                }
-            }
-        } catch (_) { }
+        // No-op on purpose to avoid any scroll movement
+        try { if (!target) return; } catch (_) { }
     }
 
     function hideElement(target) {
@@ -148,6 +190,7 @@
         target.classList.add('zen-gpt-hidden');
         ensureOverlayBefore(target);
         currentlyHiddenElement = target;
+        try { console.debug('[ZenGPT] hideElement', target); } catch (_) { }
     }
 
     function showElement(target) {
@@ -157,6 +200,24 @@
         if (currentlyHiddenElement === target) {
             currentlyHiddenElement = null;
         }
+        try { console.debug('[ZenGPT] showElement', target); } catch (_) { }
+    }
+
+    function revealAll() {
+        try {
+            const hidden = document.querySelectorAll('.zen-gpt-hidden');
+            for (const el of hidden) {
+                try { el.classList.remove('zen-gpt-hidden'); } catch (_) { }
+            }
+        } catch (_) { }
+        try {
+            const overlays = document.querySelectorAll('.zen-gpt-overlay');
+            for (const ov of overlays) {
+                try { ov.remove(); } catch (_) { }
+            }
+        } catch (_) { }
+        currentlyHiddenElement = null;
+        try { console.debug('[ZenGPT] revealAll done'); } catch (_) { }
     }
 
     function dbg() {
@@ -164,6 +225,7 @@
     }
 
     function updateHiddenState() {
+        try { console.debug('[ZenGPT] updateHiddenState start'); } catch (_) { }
         // If disabled, undo and exit
         try {
             // Read enable flag lazily; default to true if unavailable
@@ -179,6 +241,7 @@
         } catch (err) { dbg('updateHiddenState:pre-check error', err); }
         try {
             const stopPresent = isStopStreamingPresent();
+            try { console.debug('[ZenGPT] stopPresent=', stopPresent, 'wasStopPresent=', wasStopPresent); } catch (_) { }
             // Handle scroll lock on transition into/out of streaming
             if (stopPresent && !wasStopPresent) {
                 try {
@@ -192,23 +255,18 @@
                 stopScrollLock();
             }
             if (stopPresent) {
-                const latestAssistantArticle = getAssistantArticle();
-                hideElement(latestAssistantArticle);
-                ensureOverlayVisibleFor(latestAssistantArticle);
+                const target = getAssistantArticle() || getElementAboveComposer();
+                try { console.debug('[ZenGPT] target to hide =', target); } catch (_) { }
+                hideElement(target);
+                ensureOverlayVisibleFor(target);
                 wasStopPresent = stopPresent;
                 return;
             }
 
-            // Stop button not present: reveal anything we hid
-            if (currentlyHiddenElement) {
-                showElement(currentlyHiddenElement);
-            }
-            // Remove any stray overlays just in case
-            try {
-                const allOverlays = document.querySelectorAll('.zen-gpt-overlay');
-                for (const ov of allOverlays) { ov.remove(); }
-            } catch (_) { }
+            // Stop button not present: reveal everything we might have hidden
+            revealAll();
             wasStopPresent = stopPresent;
+            try { console.debug('[ZenGPT] updateHiddenState end; revealed'); } catch (_) { }
         } catch (err) { dbg('updateHiddenState:main error', err); }
     }
 
@@ -218,6 +276,7 @@
         requestAnimationFrame(() => {
             scheduled = false;
             try {
+                try { console.debug('[ZenGPT] scheduleUpdate -> run updateHiddenState'); } catch (_) { }
                 updateHiddenState();
             } catch (err) {
                 try { console.debug('[ZenGPT] scheduleUpdate error', err); } catch (_) { }
@@ -228,7 +287,10 @@
     function startObserver() {
         const observer = new MutationObserver(() => {
             try {
+                try { console.debug('[ZenGPT] mutation observed'); } catch (_) { }
                 scheduleUpdate();
+                // Continuously attempt arming composer listeners in dynamic UIs
+                try { armComposerPreLock(); } catch (_) { }
             } catch (err) {
                 try { console.debug('[ZenGPT] observer error', err); } catch (_) { }
             }
@@ -242,53 +304,119 @@
     }
 
     function startScrollLock(durationMs) {
-        try { document.documentElement.style.scrollBehavior = 'auto'; } catch (_) { }
-        savedScrollY = window.scrollY || 0;
-        if (!scrollLockContainer) scrollLockContainer = document.scrollingElement || document.documentElement;
-        try { savedScrollTop = scrollLockContainer.scrollTop; } catch (_) { savedScrollTop = 0; }
-        scrollLockUntil = Date.now() + (durationMs || 1200);
-        if (scrollLockActive) return;
-        scrollLockActive = true;
-        const cancel = () => stopScrollLock();
         try {
-            window.addEventListener('wheel', cancel, { passive: true, once: true });
-            window.addEventListener('touchstart', cancel, { passive: true, once: true });
-            window.addEventListener('keydown', cancel, { passive: true, once: true });
-        } catch (_) { }
-        // Keep the container's scrollTop locked as well
-        try {
-            scrollLockOnScroll = () => {
-                if (!scrollLockActive) return;
-                try { scrollLockContainer.scrollTop = savedScrollTop; } catch (_) { }
-            };
-            scrollLockContainer.addEventListener('scroll', scrollLockOnScroll, { passive: true });
-        } catch (_) { }
-        const tick = () => {
-            if (!scrollLockActive) return;
-            if (Date.now() > scrollLockUntil) { stopScrollLock(); return; }
-            const y = window.scrollY || 0;
-            if (Math.abs(y - savedScrollY) > 1) {
-                try { window.scrollTo(0, savedScrollY); } catch (_) { }
-            }
+            if (scrollLockActive) return;
+            scrollLockActive = true;
+            scrollLockUntil = Date.now() + (durationMs || 1500);
+            // Capture current positions; do NOT change scroll immediately
+            savedScrollY = window.scrollY || 0;
+            if (!scrollLockContainer) scrollLockContainer = document.scrollingElement || document.documentElement;
+            try { savedScrollTop = scrollLockContainer.scrollTop; } catch (_) { savedScrollTop = 0; }
+
+            const cancel = () => stopScrollLock();
             try {
-                if (Math.abs(scrollLockContainer.scrollTop - savedScrollTop) > 1) {
-                    scrollLockContainer.scrollTop = savedScrollTop;
-                }
+                // If the user interacts, stop locking so they can scroll freely
+                window.addEventListener('wheel', cancel, { passive: true, once: true });
+                window.addEventListener('touchstart', cancel, { passive: true, once: true });
+                window.addEventListener('keydown', cancel, { passive: true, once: true });
             } catch (_) { }
+
+            // Block programmatic scroll calls during lock (but allow user scrolling if lock is cancelled)
+            enableProgrammaticScrollBlock();
+            const tick = () => {
+                if (!scrollLockActive) return;
+                if (Date.now() > scrollLockUntil) { stopScrollLock(); return; }
+                lockRafId = window.requestAnimationFrame(tick);
+            };
             lockRafId = window.requestAnimationFrame(tick);
-        };
-        lockRafId = window.requestAnimationFrame(tick);
+        } catch (_) {
+            // fail open
+        }
     }
 
     function stopScrollLock() {
         if (!scrollLockActive) return;
         scrollLockActive = false;
+        scrollLockUntil = 0;
         try { lockRafId && window.cancelAnimationFrame(lockRafId); } catch (_) { }
         lockRafId = 0;
-        try { scrollLockOnScroll && scrollLockContainer && scrollLockContainer.removeEventListener('scroll', scrollLockOnScroll); } catch (_) { }
+        // Restore original programmatic scroll behavior
+        disableProgrammaticScrollBlock();
         scrollLockOnScroll = null;
         scrollLockContainer = null;
-        try { document.documentElement.style.scrollBehavior = ''; } catch (_) { }
+    }
+
+    // --- Programmatic scroll blocking ---
+    let scrollPatchEnabled = false;
+    let origWindowScrollTo = null;
+    let origWindowScrollBy = null;
+    let origElementScrollTo = null;
+    let origElementScrollIntoView = null;
+
+    function enableProgrammaticScrollBlock() {
+        if (scrollPatchEnabled) return;
+        scrollPatchEnabled = true;
+        try {
+            origWindowScrollTo = window.scrollTo;
+            origWindowScrollBy = window.scrollBy;
+            origElementScrollTo = Element.prototype.scrollTo;
+            origElementScrollIntoView = Element.prototype.scrollIntoView;
+
+            window.scrollTo = function () {
+                if (scrollLockActive) return; return origWindowScrollTo.apply(window, arguments);
+            };
+            window.scrollBy = function () {
+                if (scrollLockActive) return; return origWindowScrollBy.apply(window, arguments);
+            };
+            Element.prototype.scrollTo = function () {
+                if (scrollLockActive) return; return origElementScrollTo.apply(this, arguments);
+            };
+            Element.prototype.scrollIntoView = function () {
+                if (scrollLockActive) return; return origElementScrollIntoView.apply(this, arguments);
+            };
+        } catch (_) { }
+    }
+
+    function disableProgrammaticScrollBlock() {
+        if (!scrollPatchEnabled) return;
+        scrollPatchEnabled = false;
+        try { if (origWindowScrollTo) window.scrollTo = origWindowScrollTo; } catch (_) { }
+        try { if (origWindowScrollBy) window.scrollBy = origWindowScrollBy; } catch (_) { }
+        try { if (origElementScrollTo) Element.prototype.scrollTo = origElementScrollTo; } catch (_) { }
+        try { if (origElementScrollIntoView) Element.prototype.scrollIntoView = origElementScrollIntoView; } catch (_) { }
+        origWindowScrollTo = origWindowScrollBy = null;
+        origElementScrollTo = origElementScrollIntoView = null;
+    }
+
+    // Pre-arm scroll lock slightly before streaming begins by listening to composer actions
+    function armComposerPreLock() {
+        const composer = getComposerElement();
+        if (!composer || composer.__zengptArmed) return;
+        composer.__zengptArmed = true;
+        try {
+            composer.addEventListener('keydown', (e) => {
+                try {
+                    if ((e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                        // Arm lock for a short window; if streaming doesn't start soon, it expires harmlessly
+                        startScrollLock(3000);
+                    }
+                } catch (_) { }
+            }, true);
+        } catch (_) { }
+        try {
+            const form = composer.closest('form');
+            if (form && !form.__zengptArmed) {
+                form.__zengptArmed = true;
+                form.addEventListener('submit', () => { try { startScrollLock(3000); } catch (_) { } }, true);
+            }
+        } catch (_) { }
+        try {
+            const submitBtn = document.querySelector('#composer-submit-button, button[type="submit"][aria-label*="send" i], button[aria-label*="submit" i]');
+            if (submitBtn && !submitBtn.__zengptArmed) {
+                submitBtn.__zengptArmed = true;
+                submitBtn.addEventListener('click', () => { try { startScrollLock(3000); } catch (_) { } }, true);
+            }
+        } catch (_) { }
     }
 
     function init() {
